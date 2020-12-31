@@ -1,5 +1,13 @@
 package com.fotsum;
 
+import java.io.File;
+import java.util.UUID;
+import java.util.concurrent.Future;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.Response;
 import org.jivesoftware.openfire.PresenceManager;
 import org.jivesoftware.openfire.XMPPServer;
 import org.jivesoftware.openfire.container.Plugin;
@@ -17,15 +25,6 @@ import org.slf4j.LoggerFactory;
 import org.xmpp.packet.JID;
 import org.xmpp.packet.Message;
 import org.xmpp.packet.Packet;
-
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.Response;
-import java.io.File;
-import java.util.UUID;
-import java.util.concurrent.Future;
 
 public class CallbackOnOffline implements Plugin, PacketInterceptor {
 
@@ -55,7 +54,8 @@ public class CallbackOnOffline implements Plugin, PacketInterceptor {
 
         if (debug) {
             Log.debug("initialize CallbackOnOffline plugin. Start.");
-            Log.debug("Loaded properties: \nurl={}, \ntoken={}, \nsendBody={}", new Object[]{url, token, sendBody});
+            Log.debug("Loaded properties: \nurl={}, \ntoken={}, \nsendBody={}",
+                new Object[]{url, token, sendBody});
         }
 
         interceptorManager = InterceptorManager.getInstance();
@@ -91,25 +91,36 @@ public class CallbackOnOffline implements Plugin, PacketInterceptor {
 
 
     public void interceptPacket(Packet packet, Session session, boolean incoming,
-                                boolean processed) throws PacketRejectedException {
+        boolean processed) throws PacketRejectedException {
         if (processed
-                && incoming
-                && packet instanceof Message
-                && packet.getTo() != null) {
+            && incoming
+            && packet instanceof Message
+            && packet.getTo() != null) {
 
             Message msg = (Message) packet;
             JID to = packet.getTo();
 
-            if (msg.getType() != Message.Type.chat) {
+            try {
+                if (msg.getType() != Message.Type.chat) {
+                    return;
+                }
+                if (msg.getBody() == null && msg.getBody().isEmpty()) {
+                    return;
+                }
+            } catch (NullPointerException npe) {
+                Log.debug("Message does not contain body or is not of type chat");
                 return;
             }
+            Log.debug("Message type is " + msg.getType().toString());
+            Log.debug("Message packet: " + packet.toString());
 
             try {
                 User userTo = userManager.getUser(to.getNode());
                 boolean available = presenceManager.isAvailable(userTo);
 
                 if (debug) {
-                    Log.debug("intercepted message from {} to {}, recipient is available {}", new Object[]{packet.getFrom().toBareJID(), to.toBareJID(), available});
+                    Log.debug("intercepted message from {} to {}, recipient is available {}",
+                        new Object[]{packet.getFrom().toBareJID(), to.toBareJID(), available});
                 }
 
                 if (!available) {
@@ -122,17 +133,19 @@ public class CallbackOnOffline implements Plugin, PacketInterceptor {
                         Log.debug("sending request to url='{}'", target);
                     }
 
-                    MessageData data = new MessageData(token, from.toBareJID(), to.toBareJID(), body);
+                    MessageData data = new MessageData(token, from.toBareJID(), to.toBareJID(),
+                        body);
 
                     Future<Response> responseFuture = target
-                            .request()
-                            .async()
-                            .post(Entity.json(data));
+                        .request()
+                        .async()
+                        .post(Entity.json(data));
 
                     if (debug) {
                         try {
                             Response response = responseFuture.get();
-                            Log.debug("got response status url='{}' status='{}'", target, response.getStatus());
+                            Log.debug("got response status url='{}' status='{}'", target,
+                                response.getStatus());
                         } catch (Exception e) {
                             Log.debug("can't get response status url='{}'", target, e);
                         }
